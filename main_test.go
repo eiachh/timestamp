@@ -6,6 +6,7 @@ import (
 	"math"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -13,10 +14,15 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func Setup() *gin.Engine {
+var router *gin.Engine
+
+func TestMain(m *testing.M) {
 	gin.SetMode(gin.TestMode)
-	r := setupServer()
-	return r
+	router = setupServer()
+	go startServer(router)
+
+	exitCode := m.Run()
+	os.Exit(exitCode)
 }
 
 func PerformPostTimestamp(router *gin.Engine, data string) *httptest.ResponseRecorder {
@@ -46,10 +52,35 @@ func PerformGetTimestamp(router *gin.Engine) *httptest.ResponseRecorder {
 	return w
 }
 
-func TestSetTimestamp(t *testing.T) {
-	router := Setup()
-	go startServer(router)
+func TestGetTimestampDefault(t *testing.T) {
+	resp := PerformGetTimestamp(router)
 
+	if resp.Code != http.StatusOK {
+		fmt.Print("200")
+	}
+	respBody := resp.Body.String()
+	if respBody != "-62135596800" {
+		t.Errorf("Unexpected body! Expected: %s, Got: %s", "-62135596800", respBody)
+	}
+}
+
+func TestGetTimestampWhenSet(t *testing.T) {
+	setTime := "1740863149"
+	PerformPostTimestamp(router, setTime)
+
+	time.Sleep(time.Millisecond)
+
+	resp := PerformGetTimestamp(router)
+	if resp.Code != http.StatusOK {
+		fmt.Print("200")
+	}
+	respBody := resp.Body.String()
+	if respBody != setTime {
+		t.Errorf("Unexpected body! Expected: %s, Got: %s", setTime, respBody)
+	}
+}
+
+func TestSetTimestamp(t *testing.T) {
 	biggerThanInt64 := strconv.FormatInt(math.MaxInt64, 10) + "1"
 
 	tests := []struct {
@@ -79,9 +110,6 @@ func TestSetTimestamp(t *testing.T) {
 }
 
 func TestSetTimestampNilBody(t *testing.T) {
-	router := Setup()
-	go startServer(router)
-
 	resp := PerformPostWithNilData(router)
 
 	respBody := resp.Body.String()
@@ -94,44 +122,7 @@ func TestSetTimestampNilBody(t *testing.T) {
 	}
 }
 
-func TestGetTimestampDefault(t *testing.T) {
-	router := Setup()
-	go startServer(router)
-
-	resp := PerformGetTimestamp(router)
-
-	if resp.Code != http.StatusOK {
-		fmt.Print("200")
-	}
-	respBody := resp.Body.String()
-	if respBody != "-62135596800" {
-		t.Errorf("Unexpected body! Expected: %s, Got: %s", "-62135596800", respBody)
-	}
-}
-
-func TestGetTimestampWhenSet(t *testing.T) {
-	router := Setup()
-	go startServer(router)
-
-	setTime := "1740863149"
-	PerformPostTimestamp(router, setTime)
-
-	time.Sleep(time.Millisecond)
-
-	resp := PerformGetTimestamp(router)
-	if resp.Code != http.StatusOK {
-		fmt.Print("200")
-	}
-	respBody := resp.Body.String()
-	if respBody != setTime {
-		t.Errorf("Unexpected body! Expected: %s, Got: %s", setTime, respBody)
-	}
-}
-
 func TestEnforcePlainTextPOST(t *testing.T) {
-	router := Setup()
-	go startServer(router)
-
 	reqPOST, _ := http.NewRequest(http.MethodPost, "/timestamp", bytes.NewBufferString("1740863149"))
 	reqPOST.Header.Set("Content-Type", "application/json")
 	wPOST := httptest.NewRecorder()
@@ -143,9 +134,6 @@ func TestEnforcePlainTextPOST(t *testing.T) {
 }
 
 func TestEnforcePlainTextGET(t *testing.T) {
-	router := Setup()
-	go startServer(router)
-
 	reqGET, _ := http.NewRequest(http.MethodGet, "/timestamp", nil)
 	reqGET.Header.Set("Content-Type", "application/json")
 	wGET := httptest.NewRecorder()
